@@ -15,8 +15,8 @@ def main():
   code_dir = os.path.dirname(os.path.realpath(__file__))
 
   # 直接定义参数
-  mesh_file = "/root/autodl-tmp/FoundationPose/demo_data/diban/mesh/G90.obj"
-  test_scene_dir = "/root/autodl-tmp/FoundationPose/demo_data/diban"
+  mesh_file = "datasets/test_photo/mesh/G90.obj"
+  test_scene_dir = "datasets/test_photo"
 
   # 初始姿态估计的优化迭代次数,默认为 5 次
   est_refine_iter = 5
