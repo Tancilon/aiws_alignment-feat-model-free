@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/root/autodl-tmp/FoundationPose/mycpp/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
