@@ -9,3 +9,5 @@
 *.jpeg
 .DS_Store
 datasets/
+my_data_*/
+__pycache__

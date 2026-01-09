@@ -1,7 +1,7 @@
 {
 	"InstallScripts" : 
 	[
-		"/root/autodl-tmp/FoundationPose/mycpp/build/cmake_install.cmake"
+		"/home/dq/mnt/localgit/aiws_alignment-feat-model-free/mycpp/build/cmake_install.cmake"
 	],
 	"Parallel" : false
 }

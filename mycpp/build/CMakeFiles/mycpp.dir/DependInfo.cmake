@@ -8,8 +8,8 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/root/autodl-tmp/FoundationPose/mycpp/src/Utils.cpp" "CMakeFiles/mycpp.dir/src/Utils.cpp.o" "gcc" "CMakeFiles/mycpp.dir/src/Utils.cpp.o.d"
-  "/root/autodl-tmp/FoundationPose/mycpp/src/app/pybind_api.cpp" "CMakeFiles/mycpp.dir/src/app/pybind_api.cpp.o" "gcc" "CMakeFiles/mycpp.dir/src/app/pybind_api.cpp.o.d"
+  "/home/dq/mnt/localgit/aiws_alignment-feat-model-free/mycpp/src/Utils.cpp" "CMakeFiles/mycpp.dir/src/Utils.cpp.o" "gcc" "CMakeFiles/mycpp.dir/src/Utils.cpp.o.d"
+  "/home/dq/mnt/localgit/aiws_alignment-feat-model-free/mycpp/src/app/pybind_api.cpp" "CMakeFiles/mycpp.dir/src/app/pybind_api.cpp.o" "gcc" "CMakeFiles/mycpp.dir/src/app/pybind_api.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.
