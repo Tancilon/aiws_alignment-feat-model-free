@@ -11,3 +11,8 @@
 datasets/
 my_data_*/
 __pycache__
+
+*/.vscode/
+*/data/
+*/datasets/
+*/__pychache__/

@@ -1,4 +1,5 @@
 # 此文件用于测试自己的数据集 - 每帧都进行register而不是追踪
+from pathlib import Path
 from estimater import *
 from datareader import *
 import os
@@ -11,17 +12,19 @@ import open3d as o3d
 from datetime import datetime
 
 
-def main():
+def foundationpose_aiws(mesh_file: Path,
+                        test_scene_dir: Path,
+                        debug_dir: Path,
+                        debug: int = 2,   # 调试级别,控制可视化输出 默认为 1 级
+                        ):
   code_dir = os.path.dirname(os.path.realpath(__file__))
 
   # 直接定义参数
-  mesh_file = "datasets/aiws1229_self_collected/G90/mesh-genpose-test/G90_var_centered_scale.obj"
-  test_scene_dir = "datasets/aiws1229_self_collected/G90"
+  # mesh_file = "datasets/aiws1229_self_collected/G90/mesh-genpose-test/G90_var_centered_scale.obj"
+  # test_scene_dir = "datasets/aiws1229_self_collected/G90"
 
   # 初始姿态估计的优化迭代次数,默认为 5 次
   est_refine_iter = 5
-  # 调试级别,控制可视化输出 默认为 1 级
-  debug = 2
 
   # 调试信息存储目录
   # debug_dir = f'{code_dir}/my_data_debug6'
@@ -30,7 +33,7 @@ def main():
   # 按 年月日时 生成文件夹名
   folder_name = now.strftime("%Y%m%d_%H")
   # 调试信息存储目录
-  debug_dir = f'{code_dir}/my_data_debug_{folder_name}'
+  # debug_dir = f'{code_dir}/my_data_debug_{folder_name}'
 
   set_logging_format()  # 设置日志格式
   set_seed(0)
@@ -92,8 +95,8 @@ def main():
       o3d.io.write_point_cloud(f'{debug_dir}/scene_complete.ply', pcd)
 
     # 保存物体在相机坐标系下的姿态矩阵
-    os.makedirs(f'{debug_dir}/ob_in_cam', exist_ok=True)
-    np.savetxt(f'{debug_dir}/ob_in_cam/{reader.id_strs[i]}.txt', pose.reshape(4, 4))
+    # os.makedirs(f'{debug_dir}/ob_in_cam', exist_ok=True)
+    # np.savetxt(f'{debug_dir}/ob_in_cam/{reader.id_strs[i]}.txt', pose.reshape(4, 4))
 
     # 在 RGB 图像上绘制 3D 包围盒和坐标轴,并显示出来
     if debug >= 1:
@@ -110,5 +113,5 @@ def main():
       imageio.imwrite(f'{debug_dir}/track_vis/{reader.id_strs[i]}.png', vis)
 
 
-if __name__ == '__main__':
-  main()
+    ob_in_cam = pose.reshape(4, 4)
+    return ob_in_cam
