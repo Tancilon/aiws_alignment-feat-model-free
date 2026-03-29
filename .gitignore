@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+mycpp/build/
+bundlesdf/mycuda/build/
+
+weights/**/*.pth
+
+results/
+my_data_debug*/
