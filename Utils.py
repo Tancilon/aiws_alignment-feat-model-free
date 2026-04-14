@@ -581,6 +581,14 @@ def compute_crop_window_tf_batch(pts=None, H=None, W=None, poses=None, K=None, c
   @min_box: min_box/min_circle
   @scale: scale to apply to the tightly enclosing roi
   '''
+  if torch.is_tensor(poses):
+    pose_device = poses.device
+    pose_dtype = poses.dtype if poses.is_floating_point() else torch.float32
+  else:
+    pose_device = None
+    pose_dtype = torch.float32
+  poses = torch.as_tensor(poses, device=pose_device, dtype=pose_dtype)
+
   def compute_tf_batch(left, right, top, bottom):
     B = len(left)
     left = left.round()
@@ -588,26 +596,25 @@ def compute_crop_window_tf_batch(pts=None, H=None, W=None, poses=None, K=None, c
     top = top.round()
     bottom = bottom.round()
 
-    tf = torch.eye(3)[None].expand(B,-1,-1).contiguous()
+    tf = torch.eye(3, device=pose_device, dtype=pose_dtype)[None].expand(B,-1,-1).contiguous()
     tf[:,0,2] = -left
     tf[:,1,2] = -top
-    new_tf = torch.eye(3)[None].expand(B,-1,-1).contiguous()
+    new_tf = torch.eye(3, device=pose_device, dtype=pose_dtype)[None].expand(B,-1,-1).contiguous()
     new_tf[:,0,0] = out_size[0]/(right-left)
     new_tf[:,1,1] = out_size[1]/(bottom-top)
     tf = new_tf@tf
     return tf
 
   B = len(poses)
-  torch.set_default_tensor_type('torch.cuda.FloatTensor')
   if method=='box_3d':
-    radius = mesh_diameter*crop_ratio/2
+    radius = torch.as_tensor(mesh_diameter, device=pose_device, dtype=pose_dtype) * float(crop_ratio) / 2.0
     offsets = torch.tensor([0,0,0,
                         radius,0,0,
                         -radius,0,0,
                         0,radius,0,
-                        0,-radius,0]).reshape(-1,3)
+                        0,-radius,0], device=pose_device, dtype=pose_dtype).reshape(-1,3)
     pts = poses[:,:3,3].reshape(-1,1,3)+offsets.reshape(1,-1,3)
-    K = torch.as_tensor(K)
+    K = torch.as_tensor(K, device=pose_device, dtype=pose_dtype)
     projected = (K@pts.reshape(-1,3).T).T
     uvs = projected[:,:2]/projected[:,2:3]
     uvs = uvs.reshape(B, -1, 2)

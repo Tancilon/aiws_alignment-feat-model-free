@@ -117,6 +117,7 @@ def make_crop_data_batch(render_size, ob_in_cams, mesh, rgb, depth, K, crop_rati
 class ScorePredictor:
   def __init__(self, amp=True):
     self.amp = amp
+    self.score_chunk_size = int(os.environ.get('AIWS_SCORE_CHUNK_SIZE', 16))
     self.run_name = "2024-01-11-20-02-45"
 
     model_name = 'model_best.pth'
@@ -157,6 +158,63 @@ class ScorePredictor:
     self.model.cuda().eval()
     logging.info("init done")
 
+  def _build_model_inputs(self, pose_data:BatchPoseData):
+    A = torch.cat([pose_data.rgbAs, pose_data.xyz_mapAs], dim=1).float()
+    B = torch.cat([pose_data.rgbBs, pose_data.xyz_mapBs], dim=1).float()
+    if pose_data.normalAs is not None:
+      A = torch.cat([A, pose_data.normalAs.float()], dim=1)
+      B = torch.cat([B, pose_data.normalBs.float()], dim=1)
+    return A, B
+
+  def _extract_score_features(self, pose_data:BatchPoseData):
+    A, B = self._build_model_inputs(pose_data)
+    with torch.cuda.amp.autocast(enabled=self.amp and A.is_cuda):
+      feats = self.model.extract_feat(A, B)
+    return feats.float()
+
+  def _score_feature_tensor(self, feats:torch.Tensor):
+    x = feats.reshape(1, len(feats), -1)
+    x, _ = self.model.att_cross(x, x, x)
+    return self.model.linear(x).float().reshape(-1)
+
+  def _score_pose_data_chunks(self, pose_data_chunks):
+    feat_chunks = []
+    for pose_data in pose_data_chunks:
+      feat_chunks.append(self._extract_score_features(pose_data))
+      del pose_data
+      if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    if len(feat_chunks)==0:
+      return torch.empty((0,), dtype=torch.float)
+    feats = torch.cat(feat_chunks, dim=0)
+    return self._score_feature_tensor(feats)
+
+  @staticmethod
+  def _batch_pose_data_to_cpu(batch:BatchPoseData):
+    out = BatchPoseData()
+    for k in batch.__dict__:
+      value = batch.__dict__[k]
+      if torch.is_tensor(value):
+        out.__dict__[k] = value.detach().cpu()
+      else:
+        out.__dict__[k] = value
+    return out
+
+  @staticmethod
+  def _concat_pose_data_chunks(chunks):
+    if len(chunks)==1:
+      return chunks[0]
+    out = BatchPoseData()
+    for k in chunks[0].__dict__:
+      values = [chunk.__dict__[k] for chunk in chunks if chunk.__dict__[k] is not None]
+      if len(values)==0:
+        out.__dict__[k] = None
+      elif torch.is_tensor(values[0]):
+        out.__dict__[k] = torch.cat(values, dim=0)
+      else:
+        out.__dict__[k] = values[0]
+    return out
+
 
   @torch.inference_mode()
   def predict(self, rgb, depth, K, ob_in_cams, normal_map=None, get_vis=False, mesh=None, mesh_tensors=None, glctx=None, mesh_diameter=None):
@@ -178,51 +236,40 @@ class ScorePredictor:
     rgb = torch.as_tensor(rgb, device='cuda', dtype=torch.float)
     depth = torch.as_tensor(depth, device='cuda', dtype=torch.float)
 
-    pose_data = make_crop_data_batch(self.cfg.input_resize, ob_in_cams, mesh, rgb, depth, K, crop_ratio=self.cfg['crop_ratio'], glctx=glctx, mesh_tensors=mesh_tensors, dataset=self.dataset, cfg=self.cfg, mesh_diameter=mesh_diameter)
+    pose_data_chunks = []
 
-    def find_best_among_pairs(pose_data:BatchPoseData):
-      logging.info(f'pose_data.rgbAs.shape[0]: {pose_data.rgbAs.shape[0]}')
-      ids = []
-      scores = []
-      bs = pose_data.rgbAs.shape[0]
-      for b in range(0, pose_data.rgbAs.shape[0], bs):
-        A = torch.cat([pose_data.rgbAs[b:b+bs].cuda(), pose_data.xyz_mapAs[b:b+bs].cuda()], dim=1).float()
-        B = torch.cat([pose_data.rgbBs[b:b+bs].cuda(), pose_data.xyz_mapBs[b:b+bs].cuda()], dim=1).float()
-        if pose_data.normalAs is not None:
-          A = torch.cat([A, pose_data.normalAs.cuda().float()], dim=1)
-          B = torch.cat([B, pose_data.normalBs.cuda().float()], dim=1)
-        with torch.cuda.amp.autocast(enabled=self.amp):
-          output = self.model(A, B, L=len(A))
-        scores_cur = output["score_logit"].float().reshape(-1)
-        ids.append(scores_cur.argmax()+b)
-        scores.append(scores_cur)
-      ids = torch.stack(ids, dim=0).reshape(-1)
-      scores = torch.cat(scores, dim=0).reshape(-1)
-      return ids, scores
+    chunk_size = max(1, min(int(getattr(self, 'score_chunk_size', len(ob_in_cams))), len(ob_in_cams)))
 
-    pose_data_iter = pose_data
-    global_ids = torch.arange(len(ob_in_cams), device='cuda', dtype=torch.long)
-    scores_global = torch.zeros((len(ob_in_cams)), dtype=torch.float, device='cuda')
+    def pose_data_iter():
+      for b in range(0, len(ob_in_cams), chunk_size):
+        pose_data = make_crop_data_batch(
+          self.cfg.input_resize,
+          ob_in_cams[b:b+chunk_size],
+          mesh,
+          rgb,
+          depth,
+          K,
+          crop_ratio=self.cfg['crop_ratio'],
+          glctx=glctx,
+          mesh_tensors=mesh_tensors,
+          dataset=self.dataset,
+          cfg=self.cfg,
+          mesh_diameter=mesh_diameter,
+        )
+        if get_vis:
+          pose_data_chunks.append(self._batch_pose_data_to_cpu(pose_data))
+        yield pose_data
 
-    while 1:
-      ids, scores = find_best_among_pairs(pose_data_iter)
-      if len(ids)==1:
-        scores_global[global_ids] = scores + 100
-        break
-      global_ids = global_ids[ids]
-      pose_data_iter = pose_data.select_by_indices(global_ids)
-
-    scores = scores_global
+    scores = self._score_pose_data_chunks(pose_data_iter())
 
     logging.info(f'forward done')
     torch.cuda.empty_cache()
 
     if get_vis:
       logging.info("get_vis...")
-      canvas = []
-      ids = scores.argsort(descending=True)
-      canvas = vis_batch_data_scores(pose_data, ids=ids, scores=scores)
+      pose_data = self._concat_pose_data_chunks(pose_data_chunks)
+      ids = scores.argsort(descending=True).cpu()
+      canvas = vis_batch_data_scores(pose_data, ids=ids, scores=scores.cpu())
       return scores, canvas
 
     return scores, None
-
