@@ -10,6 +10,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 if str(WORKSPACE) not in sys.path:
     sys.path.insert(0, str(WORKSPACE))
+for name in [
+    module_name
+    for module_name in sys.modules
+    if module_name == "adapter" or module_name.startswith("adapter.")
+]:
+    sys.modules.pop(name, None)
 
 import adapter.fine_alignment as fine_alignment
 from adapter.fine_alignment import refine_align_and_extract_weld
