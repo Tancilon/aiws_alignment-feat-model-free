@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import importlib.util
 import json
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -10,33 +8,24 @@ from typing import Any
 import numpy as np
 from PIL import Image
 
-from aiws_pipeline.foundationpose_runner import run_foundationpose_part
-from aiws_pipeline.mesh_scaling import scale_mesh_to_size_mm
-from components.aiws_pipeline_contracts import (
+from aiws_alignment_feat_model_free.aiws_pipeline.depth_compat import load_depth
+from aiws_alignment_feat_model_free.aiws_pipeline.foundationpose_runner import (
+    run_foundationpose_part,
+)
+from aiws_alignment_feat_model_free.aiws_pipeline.mesh_scaling import scale_mesh_to_size_mm
+from aiws_alignment_feat_model_free.components.aiws_pipeline_contracts import (
     validate_alignment_result,
     validate_region_proposal,
 )
-from components.workpiece_priors import WorkpiecePriorRegistry
-from components.weld_pose_extractor import WeldPoseExtractor
-from aiws_pipeline.depth_compat import load_depth
+from aiws_alignment_feat_model_free.components.workpiece_priors import WorkpiecePriorRegistry
+from aiws_alignment_feat_model_free.components.weld_pose_extractor import WeldPoseExtractor
+from aiws_alignment_feat_model_free.visualizer.refined_pose_visualizer import (
+    RefinedPoseVisualizer,
+)
 
 
-ALIGNMENT_ROOT = Path(__file__).resolve().parents[1]
-
-
-def _load_refined_pose_visualizer():
-    module_name = "aiws_alignment_refined_pose_visualizer"
-    module_path = ALIGNMENT_ROOT / "visualizer/refined_pose_visualizer.py"
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"failed to load refined pose visualizer: {module_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module.RefinedPoseVisualizer
-
-
-RefinedPoseVisualizer = _load_refined_pose_visualizer()
+PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+ALIGNMENT_ROOT = PACKAGE_ROOT.parent
 
 
 def _resolve(path_value: str | Path, repo_root: Path) -> Path:

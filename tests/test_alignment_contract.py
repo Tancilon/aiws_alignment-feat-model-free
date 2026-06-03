@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import sys
 from pathlib import Path
 
@@ -10,13 +11,40 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-if str(WORKSPACE) not in sys.path:
-    sys.path.insert(0, str(WORKSPACE))
+for path in (WORKSPACE, ROOT):
+    if str(path) in sys.path:
+        sys.path.remove(str(path))
+    sys.path.insert(0, str(path))
+for name in [
+    module_name
+    for module_name in sys.modules
+    if module_name == "components"
+    or module_name.startswith("components.")
+    or module_name == "aiws_pipeline"
+    or module_name.startswith("aiws_pipeline.")
+]:
+    sys.modules.pop(name, None)
 
+import aiws_pipeline.alignment_contract as alignment_contract
+import aiws_pipeline.foundationpose_runner as foundationpose_runner
 from aiws_pipeline.alignment_contract import run_alignment_from_region_proposal
 from components.aiws_pipeline_contracts import validate_alignment_result
+
+
+def test_alignment_contract_uses_alignment_local_refined_pose_visualizer():
+    visualizer_path = Path(
+        inspect.getfile(alignment_contract.RefinedPoseVisualizer)
+    ).resolve()
+
+    assert visualizer_path.is_relative_to(ROOT)
+    assert visualizer_path == ROOT / "visualizer/refined_pose_visualizer.py"
+
+
+def test_alignment_pipeline_uses_alignment_local_depth_compat():
+    expected_path = ROOT / "aiws_pipeline/depth_compat.py"
+
+    assert Path(inspect.getfile(alignment_contract.load_depth)).resolve() == expected_path
+    assert Path(inspect.getfile(foundationpose_runner.load_depth)).resolve() == expected_path
 
 
 def _write_template(path: Path) -> None:

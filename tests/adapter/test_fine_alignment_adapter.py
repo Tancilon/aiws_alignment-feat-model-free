@@ -6,14 +6,19 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKSPACE = ROOT.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-if str(WORKSPACE) not in sys.path:
-    sys.path.insert(0, str(WORKSPACE))
+for path in (WORKSPACE, ROOT):
+    if str(path) in sys.path:
+        sys.path.remove(str(path))
+    sys.path.insert(0, str(path))
 for name in [
     module_name
     for module_name in sys.modules
-    if module_name == "adapter" or module_name.startswith("adapter.")
+    if module_name == "adapter"
+    or module_name.startswith("adapter.")
+    or module_name == "components"
+    or module_name.startswith("components.")
+    or module_name == "aiws_pipeline"
+    or module_name.startswith("aiws_pipeline.")
 ]:
     sys.modules.pop(name, None)
 

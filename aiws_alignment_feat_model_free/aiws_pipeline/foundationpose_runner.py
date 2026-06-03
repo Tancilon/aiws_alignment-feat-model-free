@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 from PIL import Image
 
-from aiws_pipeline.depth_compat import load_depth
+from aiws_alignment_feat_model_free.aiws_pipeline.depth_compat import load_depth
 
 
 def _camera_matrix(camera_path: str | Path) -> np.ndarray:
