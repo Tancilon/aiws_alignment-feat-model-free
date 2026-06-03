@@ -253,6 +253,85 @@ def test_run_alignment_passes_scene_inputs_to_weld_extractor(tmp_path, monkeypat
     assert payload["weld_result"]["bellmouth_weld_contact_selection"]["selected_face"] == "+X"
 
 
+def test_run_alignment_visualizes_pose_and_weld_when_enabled(tmp_path, monkeypatch):
+    template = tmp_path / "workpiece_priors/component_assembly/tube.obj"
+    _write_template(template)
+    info_path = _write_square_tube_info(tmp_path)
+    sample_dir = tmp_path / "output/0034"
+    sample_dir.mkdir(parents=True)
+    camera_path = tmp_path / "workpiece_priors/camera.json"
+    camera_path.parent.mkdir(parents=True, exist_ok=True)
+    camera_path.write_text(
+        json.dumps(
+            {
+                "width": 3,
+                "height": 2,
+                "intrinsics": {"fx": 1.0, "fy": 1.0, "cx": 1.0, "cy": 1.0},
+            }
+        ),
+        encoding="utf-8",
+    )
+    region_path = _write_region(sample_dir, camera_path)
+
+    def fake_runner(**kwargs):
+        return np.eye(4, dtype=np.float64)
+
+    seen = {"visualizer_instances": []}
+
+    class FakeVisualizer:
+        def __init__(self, **kwargs):
+            self.output_dir = kwargs["output_dir"]
+            self.enable = kwargs["enable"]
+            seen["visualizer_instances"].append(self)
+
+        def save(self, **kwargs):
+            seen["alignment_visualizer"] = self
+            seen["alignment_source_rgb_path"] = kwargs["source_rgb_path"]
+            path = Path(self.output_dir) / "rgb_refined_pose.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("alignment", encoding="utf-8")
+            return path
+
+        def save_weld_pose_overlay(self, **kwargs):
+            raise AssertionError("WeldPoseExtractor fake should own weld overlay call")
+
+    class FakeWeldPoseExtractor:
+        def __init__(self, **kwargs):
+            self.output_dir = kwargs["output_dir"]
+
+        def extract(self, **kwargs):
+            seen["weld_visualizer"] = kwargs["visualizer"]
+            path = Path(self.output_dir) / "rgb_weld_paths.json"
+            viz_path = Path(self.output_dir) / "rgb_weld_pose.png"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("{}", encoding="utf-8")
+            viz_path.write_text("weld", encoding="utf-8")
+            return {
+                "weld_json_path": str(path),
+                "weld_visualization_path": str(viz_path),
+            }
+
+    monkeypatch.setattr("aiws_pipeline.alignment_contract.RefinedPoseVisualizer", FakeVisualizer)
+    monkeypatch.setattr("aiws_pipeline.alignment_contract.WeldPoseExtractor", FakeWeldPoseExtractor)
+
+    result_path = run_alignment_from_region_proposal(
+        region_path=region_path,
+        workpiece_info_path=info_path,
+        repo_root=tmp_path,
+        foundationpose_runner=fake_runner,
+        visualize=True,
+    )
+
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    tube = payload["focused_parts"]["tube"]
+    weld_result = payload["weld_result"]
+    assert Path(tube["alignment_visualization_path"]).exists()
+    assert Path(weld_result["weld_visualization_path"]).exists()
+    assert seen["alignment_visualizer"].enable is True
+    assert seen["weld_visualizer"].enable is True
+    assert Path(seen["alignment_source_rgb_path"]) == sample_dir / "rgb.png"
+
+
 def test_run_alignment_records_failed_part(tmp_path):
     template = tmp_path / "workpiece_priors/component_assembly/tube.obj"
     _write_template(template)

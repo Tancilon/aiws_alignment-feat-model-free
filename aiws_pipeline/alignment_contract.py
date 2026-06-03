@@ -17,6 +17,7 @@ from components.aiws_pipeline_contracts import (
 from components.workpiece_priors import WorkpiecePriorRegistry
 from components.weld_pose_extractor import WeldPoseExtractor
 from utils.depth_compat import load_depth
+from visualizer.refined_pose_visualizer import RefinedPoseVisualizer
 
 
 def _resolve(path_value: str | Path, repo_root: Path) -> Path:
@@ -38,6 +39,18 @@ def _load_intrinsics(camera_path: str | Path, repo_root: Path) -> dict[str, floa
 class _StaticWeldRegistry:
     def get_entry(self, class_name: str):
         return SimpleNamespace(class_name=class_name)
+
+
+class _PriorVisualizerRegistry:
+    def __init__(self, registry: WorkpiecePriorRegistry, part_name: str):
+        self.registry = registry
+        self.part_name = part_name
+
+    def require_complete_entry(self, class_name: str):
+        return SimpleNamespace(
+            class_name=class_name,
+            obj_path=self.registry.component_template(class_name, self.part_name),
+        )
 
 
 def _load_weld_scene_inputs(
@@ -88,6 +101,8 @@ def _extract_weld_result(
     source_rgb_path: str | Path,
     intrinsics: dict[str, float],
     repo_root: Path,
+    registry: WorkpiecePriorRegistry,
+    visualize: bool = False,
 ) -> dict[str, Any]:
     aligned_part_name = "tube"
     aligned = focused_results.get("tube")
@@ -108,6 +123,26 @@ def _extract_weld_result(
             aligned_part_name=aligned_part_name,
             repo_root=repo_root,
         )
+        visualizer = None
+        if visualize:
+            visualizer = RefinedPoseVisualizer(
+                registry=_PriorVisualizerRegistry(registry, aligned_part_name),
+                output_dir=sample_dir / "alignment_visualization",
+                enable=True,
+            )
+            try:
+                viz_path = visualizer.save(
+                    rgb=rgb,
+                    class_name=category,
+                    size_m=np.asarray(aligned["matched_size_xyz_mm"], dtype=np.float64) / 1000.0,
+                    refined_pose=np.asarray(aligned["pose_cam_4x4"], dtype=np.float64),
+                    intrinsics=intrinsics,
+                    source_rgb_path=source_rgb_path,
+                )
+                if viz_path is not None:
+                    aligned["alignment_visualization_path"] = str(viz_path)
+            except Exception as exc:
+                aligned["alignment_visualization_error"] = str(exc)
         extractor = WeldPoseExtractor(
             registry=_StaticWeldRegistry(),
             output_dir=sample_dir / "weld_pose",
@@ -119,7 +154,7 @@ def _extract_weld_result(
             size_m=np.asarray(aligned["matched_size_xyz_mm"], dtype=np.float64) / 1000.0,
             refined_pose=np.asarray(aligned["pose_cam_4x4"], dtype=np.float64),
             intrinsics=intrinsics,
-            visualizer=None,
+            visualizer=visualizer,
             source_rgb_path=source_rgb_path,
             depth=depth,
             mask=mask,
@@ -133,7 +168,12 @@ def _extract_weld_result(
         "weld_json_path": result["weld_json_path"],
         **{
             metadata_key: result[metadata_key]
-            for metadata_key in ("weld_side_selection", "bellmouth_weld_contact_selection")
+            for metadata_key in (
+                "weld_side_selection",
+                "bellmouth_weld_contact_selection",
+                "weld_visualization_path",
+                "weld_error",
+            )
             if metadata_key in result
         },
     }
@@ -144,6 +184,7 @@ def run_alignment_from_region_proposal(
     workpiece_info_path: str | Path,
     repo_root: str | Path,
     foundationpose_runner: Any = run_foundationpose_part,
+    visualize: bool = False,
 ) -> Path:
     repo_root = Path(repo_root).resolve()
     region_path = Path(region_path).resolve()
@@ -202,6 +243,8 @@ def run_alignment_from_region_proposal(
         source_rgb_path=region_payload["rgb_path"],
         intrinsics=intrinsics,
         repo_root=repo_root,
+        registry=registry,
+        visualize=visualize,
     )
 
     result_payload = {
