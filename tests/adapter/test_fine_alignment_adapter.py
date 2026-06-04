@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 import sys
 
@@ -24,6 +25,32 @@ for name in [
 
 import adapter.fine_alignment as fine_alignment
 from adapter.fine_alignment import refine_align_and_extract_weld
+
+
+def _write_successful_alignment_payload(tmp_path: Path) -> Path:
+    weld_json_path = tmp_path / "weld_pose/rgb_weld_paths.json"
+    weld_json_path.parent.mkdir(parents=True, exist_ok=True)
+    weld_json_path.write_text(
+        json.dumps({"coord_system": "camera_mm", "weld_paths": []}),
+        encoding="utf-8",
+    )
+    alignment_path = tmp_path / "alignment_result.json"
+    alignment_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "sample_id": "sample",
+                "workpiece_type": "square_tube",
+                "focused_parts": {"tube": {"status": "aligned"}},
+                "weld_result": {
+                    "status": "extracted",
+                    "weld_json_path": str(weld_json_path),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return alignment_path
 
 
 def test_refine_align_and_extract_weld_returns_minimal_weld_paths(tmp_path, monkeypatch):
@@ -87,6 +114,59 @@ def test_refine_align_and_extract_weld_returns_minimal_weld_paths(tmp_path, monk
             }
         ],
     }
+
+
+def test_refine_align_and_extract_weld_suppresses_runtime_noise_by_default(
+    tmp_path, monkeypatch, capsys
+):
+    logging.getLogger().setLevel(logging.INFO)
+    region_path = tmp_path / "region_proposal.json"
+    region_path.write_text("{}", encoding="utf-8")
+
+    def noisy_alignment(**_kwargs):
+        print("runtime stdout noise")
+        print("runtime stderr noise", file=sys.stderr)
+        logging.info("runtime logging noise")
+        return _write_successful_alignment_payload(tmp_path)
+
+    monkeypatch.setattr(
+        fine_alignment,
+        "run_alignment_from_region_proposal",
+        noisy_alignment,
+    )
+
+    result = refine_align_and_extract_weld(str(region_path), verbose=False)
+
+    captured = capsys.readouterr()
+    assert result.status == "ok"
+    assert "runtime stdout noise" not in captured.out
+    assert "runtime stderr noise" not in captured.err
+    assert "runtime logging noise" not in captured.err
+
+
+def test_refine_align_and_extract_weld_keeps_runtime_noise_when_verbose(
+    tmp_path, monkeypatch, capsys
+):
+    region_path = tmp_path / "region_proposal.json"
+    region_path.write_text("{}", encoding="utf-8")
+
+    def noisy_alignment(**_kwargs):
+        print("runtime stdout noise")
+        print("runtime stderr noise", file=sys.stderr)
+        return _write_successful_alignment_payload(tmp_path)
+
+    monkeypatch.setattr(
+        fine_alignment,
+        "run_alignment_from_region_proposal",
+        noisy_alignment,
+    )
+
+    result = refine_align_and_extract_weld(str(region_path), verbose=True)
+
+    captured = capsys.readouterr()
+    assert result.status == "ok"
+    assert "runtime stdout noise" in captured.out
+    assert "runtime stderr noise" in captured.err
 
 
 def test_refine_align_and_extract_weld_verbose_includes_paths_and_visualizations(

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import contextlib
+import io
 import json
+import logging
 import sys
 from pathlib import Path
 from typing import Any
@@ -50,6 +53,23 @@ def _collect_visualization_paths(
     return paths
 
 
+@contextlib.contextmanager
+def _runtime_output_scope(*, quiet: bool):
+    if not quiet:
+        yield
+        return
+
+    previous_disable_level = logging.root.manager.disable
+    logging.disable(logging.INFO)
+    try:
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(
+            io.StringIO()
+        ):
+            yield
+    finally:
+        logging.disable(previous_disable_level)
+
+
 def refine_align_and_extract_weld(
     region_proposal_path: str | Path,
     *,
@@ -60,12 +80,13 @@ def refine_align_and_extract_weld(
 ) -> WeldAlignmentResult:
     region_path = Path(region_proposal_path).resolve()
     try:
-        alignment_path = run_alignment_from_region_proposal(
-            region_path=region_path,
-            workpiece_info_path=workpiece_info_path,
-            repo_root=repo_root,
-            visualize=visualize,
-        )
+        with _runtime_output_scope(quiet=not verbose):
+            alignment_path = run_alignment_from_region_proposal(
+                region_path=region_path,
+                workpiece_info_path=workpiece_info_path,
+                repo_root=repo_root,
+                visualize=visualize,
+            )
         alignment_path = Path(alignment_path).resolve()
         alignment_payload = _load_json(alignment_path)
         weld_result = alignment_payload.get("weld_result", {})
